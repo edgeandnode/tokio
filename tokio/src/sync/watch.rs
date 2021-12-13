@@ -423,18 +423,28 @@ impl<T> Drop for Receiver<T> {
 }
 
 impl<T> Sender<T> {
+    /// See `send_logged`
+    pub fn send(&self, value: T) -> Result<(), error::SendError<T>> {
+        self.send_logged(value, slog::Logger::root(slog::Discard, slog::o!()))
+    }
+
     /// Sends a new value via the channel, notifying all receivers.
     ///
     /// This method fails if the channel has been closed, which happens when
     /// every receiver has been dropped.
-    pub fn send(&self, value: T) -> Result<(), error::SendError<T>> {
+    pub fn send_logged(&self, value: T, logger: slog::Logger) -> Result<(), error::SendError<T>> {
         // This is pretty much only useful as a hint anyway, so synchronization isn't critical.
         if 0 == self.receiver_count() {
             return Err(error::SendError(value));
         }
 
-        self.send_replace(value);
+        self.send_replace_logged(value, logger);
         Ok(())
+    }
+
+    /// See `send_replace_logged`
+    pub fn send_replace(&self, value: T) -> T {
+        self.send_replace_logged(value, slog::Logger::root(slog::Discard, slog::o!()))
     }
 
     /// Sends a new value via the channel, notifying all receivers and returning
@@ -453,8 +463,10 @@ impl<T> Sender<T> {
     /// assert_eq!(tx.send_replace(2), 1);
     /// assert_eq!(tx.send_replace(3), 2);
     /// ```
-    pub fn send_replace(&self, value: T) -> T {
+    pub fn send_replace_logged(&self, value: T, logger: slog::Logger) -> T {
         let old = {
+            slog::debug!(logger, "acquiring watcher shared value lock");
+
             // Acquire the write lock and update the value.
             let mut lock = self.shared.value.write().unwrap();
             let old = mem::replace(&mut *lock, value);
@@ -472,7 +484,9 @@ impl<T> Sender<T> {
         };
 
         // Notify all watchers
+        slog::debug!(logger, "notifying waiters");
         self.shared.notify_rx.notify_waiters();
+        slog::debug!(logger, "waiters notified");
 
         old
     }

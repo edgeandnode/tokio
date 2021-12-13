@@ -88,7 +88,7 @@ time = []
 
 [dependencies]
 tokio-macros = { path = "../tokio-macros", optional = true }
-
+slog = "2.7.0"
 pin-project-lite = "0.2.0"
 
 # Everything else is optional...
